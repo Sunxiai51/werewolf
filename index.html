@@ -75,35 +75,38 @@
                 <div class="container" v-show="gameInfo.curGameStageAllowVote && !c_voted">
                     <div class="row">
                         <div class="col">
-                            <select class="form-select" v-model="votePlayer">
-                                <option>2</option>
+                            <select class="form-select" v-model="votedPlayer">
+                                <option v-for="i in c_allowVotePlayer">{{i}}</option>
                             </select>
                         </div>
                         <div class="col">
                             <button type="button" class="btn btn-warning" v-on:click="vote">投票</button>
-                            <button type="button" class="btn btn-danger" v-on:click="vote">弃票</button>
+                            <button type="button" class="btn btn-danger" v-on:click="abstentionVote">弃票</button>
                         </div>
                     </div>
                 </div>
                 <div class="container" v-show="c_voted">
                     <div class="row">
-                        <div class="col">
+                        <div class="col" v-show="gameInfo.curPlayerVote > 0">
                             我投给了<span class="badge bg-warning text-wrap">{{ gameInfo.curPlayerVote }} </span>号
+                        </div>
+                        <div class="col" v-show="gameInfo.curPlayerVote === -1">
+                            我弃票了
                         </div>
                     </div>
                 </div>
                 <div style="height: 20px;"></div>
                 <h3 class="text-primary">本阶段投票结果</h3>
                 <div class="container" v-show="c_voteFinish">
-                    <div class="row">
+                    <div class="row" v-for="(r_list, r_voted) in gameInfo.curGameStageVoteResult">
                         <div class="col">
-                            1,2,3
+                            {{r_list}}
                         </div>
                         <div class="col">
                             投给了
                         </div>
                         <div class="col">
-                            4
+                            {{r_voted}}
                         </div>
                     </div>
                 </div>
@@ -118,7 +121,7 @@
 <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script>
-var basePath = 'http://127.0.0.1:11051';
+var basePath = 'http://172.16.156.164:11051';
 var app = new Vue({
     el: '#body',
     data: {
@@ -148,12 +151,11 @@ var app = new Vue({
             curPlayerVote: 0 // 我投了谁 
         },
         // ====================================
-        votePlayer: 0
+        votedPlayer: 0
     },
     mounted: function() {
         axios.get(basePath + '/game/player/queryProcessingGame')
             .then(function(response) {
-                console.log(response);
                 if (response.data.code == 200) {
                     var responseGameList = response.data.data;
                     for (var i = 0; i < responseGameList.length; i++) {
@@ -162,11 +164,11 @@ var app = new Vue({
                     app.selectedGame = app.processingGame[0];
                     app.selectedGameCode = app.selectedGame.code
                 } else {
-                    app.alertMessage = 'queryProcessingGame错误';
+                    app.setAlertMessage('加载游戏列表错误: ' + JSON.stringify(response.data.message));
                 }
             })
             .catch(function(error) {
-                console.log(error);
+                app.setAlertMessage('加载游戏列表错误: ' + JSON.stringify(error));
             })
             .then(function() {});
     },
@@ -180,7 +182,17 @@ var app = new Vue({
         },
         c_voteFinish: function() {
             return this.gameInfo.curGameStageVoteFinished;
+        },
+        c_allowVotePlayer: function() {
+            var result = [];
+            this.gameInfo.curStageVoteLimit.allowVotedPlayer.forEach(function(i) {
+                if (i != -1) {
+                    result.push(i);
+                }
+            });
+            return result;
         }
+
     },
     methods: {
         refreshSelectedGame() {
@@ -204,11 +216,10 @@ var app = new Vue({
                         app.clearAlertMessage();
                         app.refreshGameInfo();
                     } else {
-                        app.setAlertMessage('进入游戏失败: ' + JSON.stringify(response.data));
+                        app.setAlertMessage('进入游戏失败: ' + JSON.stringify(response.data.message));
                     }
                 })
                 .catch(function(error) {
-                    console.log(error);
                     app.setAlertMessage('进入游戏失败: ' + JSON.stringify(error));
 
                 })
@@ -219,25 +230,44 @@ var app = new Vue({
                     gameCode: app.curGameCode,
                     gameStage: app.gameInfo.curGameStage,
                     player: app.curPlayer,
-                    votePlayer: app.votePlayer
+                    votedPlayer: app.votedPlayer
                 })
                 .then(function(response) {
                     if (response.data.code == 200) {
                         app.clearAlertMessage();
                         app.refreshGameInfo();
                     } else {
-                        app.setAlertMessage('投票失败: ' + JSON.stringify(response.data));
+                        app.setAlertMessage('投票失败: ' + JSON.stringify(response.data.message));
                     }
                 })
                 .catch(function(error) {
-                    console.log(error);
+                    app.setAlertMessage('投票失败: ' + JSON.stringify(error));
+
+                })
+                .then(function() {});
+        },
+        abstentionVote() {
+            axios.post(basePath + '/game/player/vote', {
+                    gameCode: app.curGameCode,
+                    gameStage: app.gameInfo.curGameStage,
+                    player: app.curPlayer,
+                    votedPlayer: -1
+                })
+                .then(function(response) {
+                    if (response.data.code == 200) {
+                        app.clearAlertMessage();
+                        app.refreshGameInfo();
+                    } else {
+                        app.setAlertMessage('投票失败: ' + JSON.stringify(response.data.message));
+                    }
+                })
+                .catch(function(error) {
                     app.setAlertMessage('投票失败: ' + JSON.stringify(error));
 
                 })
                 .then(function() {});
         },
         refreshGameInfo(event) {
-            console.log('refresh');
             axios.post(basePath + '/game/player/loadGameInfo', {
                     gameCode: app.curGameCode,
                     playerNum: app.curPlayer
@@ -248,11 +278,10 @@ var app = new Vue({
                         app.gameInfo = gameInfo;
                         app.clearAlertMessage();
                     } else {
-                        app.setAlertMessage('刷新游戏信息失败: ' + JSON.stringify(response.data));
+                        app.setAlertMessage('刷新游戏信息失败: ' + JSON.stringify(response.data.message));
                     }
                 })
                 .catch(function(error) {
-                    console.log(error);
                     app.setAlertMessage('刷新游戏信息失败: ' + JSON.stringify(error));
 
                 })
